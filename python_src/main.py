@@ -21,7 +21,7 @@ def main():
 
     # Initialize Processors
     emg_proc = EMGProcessor(fs=20, rms_window=5)
-    imu_proc = IMUProcessor(alpha=0.3)
+    imu_proc = IMUProcessor(alpha_smooth=0.3)
 
     # Start the Visualization Process
     viz_process = multiprocessing.Process(target=run_dashboard, args=(viz_queue, command_queue))
@@ -97,9 +97,7 @@ def main():
                     'emg_raw': data['emg'],
                     'emg_rms': emg_rms,
                     'accel_smooth': accel_smooth,
-                    'gyro_smooth': gyro_smooth,
-                    'roll': roll,
-                    'pitch': pitch
+                    'gyro_smooth': gyro_smooth
                 }
                 
                 if not viz_queue.full():
@@ -119,4 +117,5 @@ def main():
         print("System shutdown complete.")
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn', force=True)
     main()

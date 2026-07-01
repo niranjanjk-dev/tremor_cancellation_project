@@ -1,5 +1,4 @@
 import pyqtgraph as pg
-import pyqtgraph.opengl as gl
 from PyQt5 import QtCore, QtWidgets, QtGui
 import sys
 import time
@@ -17,9 +16,10 @@ def run_dashboard(viz_queue, command_queue):
     # --- Main Window & Layout ---
     win = QtWidgets.QMainWindow()
     win.setWindowTitle('Active Tremor Cancellation - Live Telemetry')
-    win.resize(1400, 800)
+    win.resize(1200, 800)
     
     central_widget = QtWidgets.QWidget()
+    central_widget.setStyleSheet("background-color: #121212;")
     win.setCentralWidget(central_widget)
     main_layout = QtWidgets.QVBoxLayout(central_widget)
     
@@ -33,23 +33,29 @@ def run_dashboard(viz_queue, command_queue):
     lbl_fps.setStyleSheet("font-size: 16px; font-weight: bold; color: #00FF00;")
     
     lbl_ml = QtWidgets.QLabel("TREMOR: NONE")
-    lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #888888; background-color: #333333; padding: 5px; border-radius: 4px;")
+    lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
     
     lbl_fes = QtWidgets.QLabel("FES STIMULATION: OFF")
-    lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #888888; background-color: #333333; padding: 5px; border-radius: 4px;")
+    lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
     
     # Port Selection
+    lbl_port = QtWidgets.QLabel("Port:")
+    lbl_port.setStyleSheet("font-size: 14px; font-weight: bold; color: #FFFFFF;")
+    
     port_combo = QtWidgets.QComboBox()
+    port_combo.setStyleSheet("background-color: #333333; color: white; padding: 4px; font-size: 14px; border: 1px solid #555;")
     ports = [port.device for port in serial.tools.list_ports.comports()]
     port_combo.addItems(ports)
     
     btn_refresh = QtWidgets.QPushButton("Refresh")
+    btn_refresh.setStyleSheet("background-color: #444444; color: white; padding: 6px; font-weight: bold; border-radius: 4px;")
     def refresh_ports():
         port_combo.clear()
         port_combo.addItems([port.device for port in serial.tools.list_ports.comports()])
     btn_refresh.clicked.connect(refresh_ports)
     
     btn_connect = QtWidgets.QPushButton("Connect")
+    btn_connect.setStyleSheet("background-color: #006600; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
     def on_connect():
         selected_port = port_combo.currentText()
         if selected_port:
@@ -61,21 +67,31 @@ def run_dashboard(viz_queue, command_queue):
     # Pause Button for Zooming
     is_paused = False
     btn_pause = QtWidgets.QPushButton("Pause for Zoom/Inspect")
-    btn_pause.setStyleSheet("background-color: #444444; color: white;")
+    btn_pause.setStyleSheet("background-color: #335588; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+    
     def on_pause():
         nonlocal is_paused
         is_paused = not is_paused
         if is_paused:
             btn_pause.setText("Resume Plotting")
-            btn_pause.setStyleSheet("background-color: #FF5555; color: white;")
+            btn_pause.setStyleSheet("background-color: #883333; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
         else:
             btn_pause.setText("Pause for Zoom/Inspect")
-            btn_pause.setStyleSheet("background-color: #444444; color: white;")
+            btn_pause.setStyleSheet("background-color: #335588; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+            
+            # Snap back to auto range when resuming
+            p_emg_raw.enableAutoRange(axis=pg.ViewBox.XAxis)
+            p_emg_raw.setYRange(0, 4095)
+            p_emg_rms.enableAutoRange(axis=pg.ViewBox.XAxis)
+            p_emg_rms.setYRange(0, 4095)
+            p_accel.enableAutoRange(axis=pg.ViewBox.XYAxes)
+            p_gyro.enableAutoRange(axis=pg.ViewBox.XYAxes)
+
     btn_pause.clicked.connect(on_pause)
 
     status_layout.addWidget(lbl_status)
     status_layout.addSpacing(20)
-    status_layout.addWidget(QtWidgets.QLabel("Port:"))
+    status_layout.addWidget(lbl_port)
     status_layout.addWidget(port_combo)
     status_layout.addWidget(btn_refresh)
     status_layout.addWidget(btn_connect)
@@ -90,37 +106,9 @@ def run_dashboard(viz_queue, command_queue):
     
     main_layout.addLayout(status_layout)
     
-    # --- Content Layout (Plots + 3D) ---
-    content_layout = QtWidgets.QHBoxLayout()
-    main_layout.addLayout(content_layout)
-    
-    # Graphics Layout for Plots
+    # --- Graphics Layout for Plots ---
     plot_layout = pg.GraphicsLayoutWidget()
-    content_layout.addWidget(plot_layout, stretch=3)
-    
-    # 3D GLViewWidget for Orientation
-    gl_view = gl.GLViewWidget()
-    gl_view.opts['distance'] = 40 # zoom out a bit
-    gl_view.setWindowTitle('Live IMU Orientation')
-    content_layout.addWidget(gl_view, stretch=1)
-    
-    # Add a grid to 3D view
-    grid = gl.GLGridItem()
-    grid.scale(2, 2, 2)
-    gl_view.addItem(grid)
-    
-    # Add a 3D box representing the IMU/Limb
-    cube = gl.GLBoxItem(size=QtGui.QVector3D(10, 10, 10), color=(0, 255, 255, 150))
-    # Translate so the origin is at the center of the box for rotation
-    cube.translate(-5, -5, -5)
-    
-    # Create a transform node to hold the rotation
-    transform_node = gl.GLGLTFItem(glOptions='translucent') if hasattr(gl, 'GLGLTFItem') else None
-    
-    # Actually, GLBoxItem has an internal transform we can modify.
-    # To rotate around its center, we need to apply the rotation matrix manually
-    # or just use rotate on the item. But rotate accumulates, so we resetTransform.
-    gl_view.addItem(cube)
+    main_layout.addWidget(plot_layout)
     
     # --- Row 1: EMG Raw & Accel ---
     p_emg_raw = plot_layout.addPlot(title="EMG Raw Signal (Muscle Activation)")
@@ -158,10 +146,9 @@ def run_dashboard(viz_queue, command_queue):
     # FPS Tracking
     last_update_time = time.time()
     fps_frames = 0
-    current_roll, current_pitch = 0, 0
     
     def update():
-        nonlocal last_update_time, fps_frames, current_roll, current_pitch
+        nonlocal last_update_time, fps_frames
         
         has_new_data = False
         sys_status = None
@@ -191,9 +178,6 @@ def run_dashboard(viz_queue, command_queue):
                 data_gy.append(gy)
                 data_gz.append(gz)
                 
-                current_roll = data.get('roll', 0)
-                current_pitch = data.get('pitch', 0)
-                
             except Exception:
                 break
         
@@ -212,17 +196,17 @@ def run_dashboard(viz_queue, command_queue):
                 
             if tremor_detected:
                 lbl_ml.setText("TREMOR: DETECTED")
-                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF; background-color: #FF0000; padding: 5px; border-radius: 4px;")
+                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF; background-color: #FF0000; padding: 6px; border-radius: 4px;")
             else:
                 lbl_ml.setText("TREMOR: NONE")
-                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #888888; background-color: #333333; padding: 5px; border-radius: 4px;")
+                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
                 
             if fes_active:
                 lbl_fes.setText("FES STIMULATION: FIRING")
-                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #000000; background-color: #00FFFF; padding: 5px; border-radius: 4px;")
+                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #000000; background-color: #00FFFF; padding: 6px; border-radius: 4px;")
             else:
                 lbl_fes.setText("FES STIMULATION: OFF")
-                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #888888; background-color: #333333; padding: 5px; border-radius: 4px;")
+                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
 
             if not is_paused:
                 # Update plot curves
@@ -237,14 +221,6 @@ def run_dashboard(viz_queue, command_queue):
                 curve_gy.setData(list(data_gy))
                 curve_gz.setData(list(data_gz))
                 
-                # Update 3D Cube Rotation
-                cube.resetTransform()
-                # Rotate first, then translate back to origin so it spins on its center
-                # PyQtGraph applies transforms in reverse order!
-                cube.rotate(current_roll, 1, 0, 0)
-                cube.rotate(current_pitch, 0, 1, 0)
-                cube.translate(-5, -5, -5) 
-
         # Calculate FPS
         fps_frames += 1
         now = time.time()
