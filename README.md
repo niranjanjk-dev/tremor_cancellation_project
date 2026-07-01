@@ -100,8 +100,7 @@ tremor_cancellation_project/
 │   ├── visualization/
 │   │   ├── __init__.py
 │   │   ├── dashboard.py          # Real-time scrolling plot and telemetry dashboard
-│   │   └── plot_imu.py           # 3D visualization of limb orientation
-│   │
+│   │            
 │   ├── storage/
 │   │   ├── __init__.py
 │   │   └── data_logger.py        # Background thread saving synchronized data
