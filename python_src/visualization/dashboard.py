@@ -81,7 +81,7 @@ def run_dashboard(viz_queue, command_queue):
             
             # Snap back to auto range when resuming
             p_emg_raw.enableAutoRange(axis=pg.ViewBox.XAxis)
-            p_emg_raw.setYRange(0, 4095)
+            p_emg_raw.setYRange(-1000, 1000)
             p_emg_rms.enableAutoRange(axis=pg.ViewBox.XAxis)
             p_emg_rms.setYRange(0, 4095)
             p_accel.enableAutoRange(axis=pg.ViewBox.XYAxes)
@@ -111,8 +111,8 @@ def run_dashboard(viz_queue, command_queue):
     main_layout.addWidget(plot_layout)
     
     # --- Row 1: EMG Raw & Accel ---
-    p_emg_raw = plot_layout.addPlot(title="EMG Raw Signal (Muscle Activation)")
-    p_emg_raw.setYRange(0, 4095)
+    p_emg_raw = plot_layout.addPlot(title="EMG Signal (Filtered & Centered)")
+    p_emg_raw.setYRange(-1000, 1000) # Give it a centered range
     curve_emg = p_emg_raw.plot(pen=pg.mkPen('#00FFFF', width=1.5))
     
     p_accel = plot_layout.addPlot(title="IMU Accelerometer (Linear Movement)")
@@ -165,7 +165,7 @@ def run_dashboard(viz_queue, command_queue):
                 tremor_detected = data.get('tremor', False)
                 fes_active = data.get('fes', False)
                 
-                data_emg.append(data['emg_raw'])
+                data_emg.append(data['emg_filtered'])
                 data_rms.append(data['emg_rms'])
                 
                 ax, ay, az = data['accel_smooth']

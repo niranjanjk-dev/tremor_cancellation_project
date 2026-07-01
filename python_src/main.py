@@ -94,7 +94,7 @@ def main():
                     'status': system_status,
                     'tremor': tremor_detected,
                     'fes': fes_active,
-                    'emg_raw': data['emg'],
+                    'emg_filtered': emg_filtered,
                     'emg_rms': emg_rms,
                     'accel_smooth': accel_smooth,
                     'gyro_smooth': gyro_smooth

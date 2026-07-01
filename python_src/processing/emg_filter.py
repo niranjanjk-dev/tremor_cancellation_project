@@ -15,41 +15,63 @@ class EMGProcessor:
         self.fs = fs
         self.nyquist = 0.5 * fs
         
-        # At 20Hz sampling rate, a 50Hz notch filter is impossible (Nyquist is 10Hz).
-        # We will design a simple bandpass filter within the available bandwidth.
-        # In a real high-speed system, fs would be 1000Hz+ and we would use:
-        # self.b_notch, self.a_notch = signal.iirnotch(notch_freq, 30.0, fs)
-        # self.b_band, self.a_band = signal.butter(4, [20, 450], btype='bandpass', fs=fs)
-        
-        # For our 20Hz prototype, we will just use a simple lowpass/highpass if needed,
-        # but to demonstrate the architecture, we'll configure a generic filter.
+        # 1. Notch Filter Initialization
+        if notch_freq < self.nyquist:
+            self.b_notch, self.a_notch = signal.iirnotch(notch_freq, 30.0, self.fs)
+            self.zi_notch = signal.lfilter_zi(self.b_notch, self.a_notch)
+        else:
+            self.b_notch = None
+
+        # 2. Bandpass Filter Initialization
         if lowcut > 0 and highcut < self.nyquist:
             self.b_band, self.a_band = signal.butter(2, [lowcut/self.nyquist, highcut/self.nyquist], btype='band')
+            self.zi_band = signal.lfilter_zi(self.b_band, self.a_band)
         else:
-            # Fallback pass-through if Nyquist is too low
-            self.b_band, self.a_band = None, None
+            self.b_band = None
 
         self.rms_window = rms_window
         self.history = []
+        
+        # For DC-Blocking EMA Filter
+        self.dc_bias = None
+        
+        # For RMS Smoothing
+        self.smoothed_rms = 0.0
 
     def process(self, raw_value):
         """
         Process a single new EMG data point.
         """
-        self.history.append(raw_value)
+        # 1. DC-Blocking High-Pass Filter (EMA)
+        if self.dc_bias is None:
+            self.dc_bias = raw_value
+            
+        # Slow EMA to track and isolate the DC bias (e.g. ~2000 resting voltage)
+        alpha_dc = 0.05
+        self.dc_bias = alpha_dc * raw_value + (1.0 - alpha_dc) * self.dc_bias
         
-        # Maintain buffer size
+        # Continuously subtract the resting voltage to force resting state to exactly 0.0
+        ac_value = raw_value - self.dc_bias
+        filtered_val = ac_value
+
+        # 2. 50Hz/60Hz Notch Filter (if sampling rate allows)
+        if self.b_notch is not None:
+            filtered_val, self.zi_notch = signal.lfilter(
+                self.b_notch, self.a_notch, [filtered_val], zi=self.zi_notch
+            )
+            filtered_val = filtered_val[0]
+
+        # 3. Bandpass Filter
+        if self.b_band is not None:
+            filtered_val, self.zi_band = signal.lfilter(
+                self.b_band, self.a_band, [filtered_val], zi=self.zi_band
+            )
+            filtered_val = filtered_val[0]
+
+        # Maintain buffer size for RMS
+        self.history.append(filtered_val)
         if len(self.history) > max(50, self.rms_window):
             self.history.pop(0)
-
-        # We need a minimum number of samples to apply scipy filters effectively
-        # For real-time point-by-point, a stateful filter using `lfilter_zi` is preferred,
-        # but for simplicity in this prototype, we'll apply it to the recent window.
-        if self.b_band is not None and len(self.history) > 10:
-            filtered_array = signal.lfilter(self.b_band, self.a_band, self.history)
-            filtered_val = filtered_array[-1]
-        else:
-            filtered_val = raw_value
 
         # Calculate RMS of the last N samples
         if len(self.history) >= self.rms_window:
@@ -57,5 +79,34 @@ class EMGProcessor:
             rms_val = np.sqrt(np.mean(np.square(window)))
         else:
             rms_val = np.abs(filtered_val)
+            
+        # 4. Noise and Value Filters for the Raw Signal (No Fluctuations)
+        # Apply a noise gate (deadzone) to eliminate idle noise completely
+        raw_noise_gate = 100.0
+        if abs(filtered_val) < raw_noise_gate:
+            filtered_val = 0.0
+        else:
+            # Soften the jump to avoid harsh staircases
+            filtered_val = filtered_val - raw_noise_gate if filtered_val > 0 else filtered_val + raw_noise_gate
 
-        return filtered_val, rms_val
+        # Add a slight EMA smoothing to the raw signal to make it look cleaner
+        if not hasattr(self, 'smoothed_raw'):
+            self.smoothed_raw = 0.0
+        alpha_raw = 0.3
+        self.smoothed_raw = alpha_raw * filtered_val + (1.0 - alpha_raw) * self.smoothed_raw
+        filtered_val = self.smoothed_raw
+
+        # 5. Smooth the RMS Envelope for stability
+        # A small alpha means more smoothing (less sensitive to sudden noise spikes)
+        alpha_rms = 0.1 
+        if self.smoothed_rms == 0.0:
+            self.smoothed_rms = rms_val
+        else:
+            self.smoothed_rms = alpha_rms * rms_val + (1.0 - alpha_rms) * self.smoothed_rms
+
+        # 6. Subtract Noise Floor to force idle to exactly 0, AND make it 2x sensitive
+        noise_floor = 150.0
+        # Subtract the floor, floor it at 0, then multiply by 2 for 2x sensitivity
+        final_rms = max(0.0, self.smoothed_rms - noise_floor) * 2.0
+
+        return filtered_val, final_rms
