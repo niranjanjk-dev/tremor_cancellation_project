@@ -99,7 +99,7 @@ tremor_cancellation_project/
 │   │
 │   ├── visualization/
 │   │   ├── __init__.py
-│   │   ├── plot_emg.py           # Real-time scrolling plot
+│   │   ├── dashboard.py          # Real-time scrolling plot and telemetry dashboard
 │   │   └── plot_imu.py           # 3D visualization of limb orientation
 │   │
 │   ├── storage/
@@ -139,6 +139,6 @@ stim_calculator.py: If a tremor is flagged, this module analyzes the IMU data to
 
 Visualization & Storage
 
-plot_emg.py & plot_imu.py: Consumes data from the processing queues strictly for UI updates. Runs in isolated processes to prevent visual lag from slowing down the safety-critical ML control loop.
+dashboard.py & plot_imu.py: Consumes data from the processing queues strictly for UI updates. Runs in isolated processes to prevent visual lag from slowing down the safety-critical ML control loop.
 
 data_logger.py: Records raw data, filtered data, ML predictions, and FES stimulation timestamps to a .csv file for post-experiment analysis.
