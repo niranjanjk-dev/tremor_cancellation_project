@@ -13,19 +13,19 @@ bool magEnabled = false;
 // Highly Optimized Binary Structure
 // __attribute__((packed)) ensures the compiler doesn't add empty padding bytes
 struct __attribute__((packed)) SensorData {
-  uint8_t sync1 = 0xAA;       // Sync byte 1
-  uint8_t sync2 = 0xBB;       // Sync byte 2
-  uint32_t timestamp;         // 4 bytes
-  uint16_t emgRaw;            // 2 bytes
-  int16_t accelX;             // 2 bytes
-  int16_t accelY;             // 2 bytes
-  int16_t accelZ;             // 2 bytes
-  int16_t gyroX;              // 2 bytes
-  int16_t gyroY;              // 2 bytes
-  int16_t gyroZ;              // 2 bytes
-  int16_t magX;               // 2 bytes
-  int16_t magY;               // 2 bytes
-  int16_t magZ;               // 2 bytes
+  uint8_t sync1 = 0xAA;
+  uint8_t sync2 = 0xBB; // Sync byte 2
+  uint32_t timestamp;   // 4 bytes
+  uint16_t emgRaw;      // 2 bytes
+  int16_t accelX;       // 2 bytes
+  int16_t accelY;       // 2 bytes
+  int16_t accelZ;       // 2 bytes
+  int16_t gyroX;        // 2 bytes
+  int16_t gyroY;        // 2 bytes
+  int16_t gyroZ;        // 2 bytes
+  int16_t magX;         // 2 bytes
+  int16_t magY;         // 2 bytes
+  int16_t magZ;         // 2 bytes
 };
 
 SensorData packet; // Create an instance of our packet
@@ -41,15 +41,18 @@ inline void writeRegister(uint8_t address, uint8_t reg, uint8_t value) {
 uint8_t readRegister(uint8_t address, uint8_t reg) {
   Wire.beginTransmission(address);
   Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return 0;
-  if (Wire.requestFrom(address, (uint8_t)1) == 1) return Wire.read();
+  if (Wire.endTransmission(false) != 0)
+    return 0;
+  if (Wire.requestFrom(address, (uint8_t)1) == 1)
+    return Wire.read();
   return 0;
 }
 
 bool readRegisters(uint8_t address, uint8_t reg, uint8_t count, uint8_t *dest) {
   Wire.beginTransmission(address);
   Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.endTransmission(false) != 0)
+    return false;
   if (Wire.requestFrom(address, count) == count) {
     Wire.readBytes(dest, count);
     return true;
@@ -71,11 +74,11 @@ bool initMPU9250() {
 
 bool initAK8963() {
   writeRegister(AK8963_ADDR, 0x0A, 0x16); // CNTL1: 100Hz continuous measurement
-  return true; 
+  return true;
 }
 
 void setup() {
-  Serial.begin(115200); // Or try 921600 for even faster transmission
+  Serial.begin(115200);       // Or try 921600 for even faster transmission
   Wire.begin(21, 22, 400000); // I2C Fast Mode
 
   if (initMPU9250()) {
@@ -85,14 +88,15 @@ void setup() {
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
   pinMode(EMG_PIN, INPUT);
-  
+
   nextSampleTime = millis();
 }
 
 void loop() {
   unsigned long now = millis();
-  if (now < nextSampleTime) return;
-  
+  if (now < nextSampleTime)
+    return;
+
   nextSampleTime += SAMPLE_INTERVAL_MS;
   if (now - nextSampleTime >= SAMPLE_INTERVAL_MS) {
     nextSampleTime = now + SAMPLE_INTERVAL_MS;
@@ -106,9 +110,9 @@ void loop() {
     packet.accelX = readInt16(buffer[0], buffer[1]);
     packet.accelY = readInt16(buffer[2], buffer[3]);
     packet.accelZ = readInt16(buffer[4], buffer[5]);
-    packet.gyroX  = readInt16(buffer[8], buffer[9]);
-    packet.gyroY  = readInt16(buffer[10], buffer[11]);
-    packet.gyroZ  = readInt16(buffer[12], buffer[13]);
+    packet.gyroX = readInt16(buffer[8], buffer[9]);
+    packet.gyroY = readInt16(buffer[10], buffer[11]);
+    packet.gyroZ = readInt16(buffer[12], buffer[13]);
   }
 
   if (magEnabled && (readRegister(AK8963_ADDR, 0x02) & 0x01)) {
@@ -121,5 +125,5 @@ void loop() {
   }
 
   // Blast the memory block directly to the Serial port
-  Serial.write((uint8_t*)&packet, sizeof(packet));
+  Serial.write((uint8_t *)&packet, sizeof(packet));
 }
