@@ -10,6 +10,7 @@ from python_src.acquisition.serial_io import SerialDataAcquisition
 from python_src.processing.emg_filter import EMGProcessor
 from python_src.processing.imu_filter import IMUProcessor
 from python_src.visualization.dashboard import run_dashboard
+from python_src.storage.data_logger import DataLogger
 
 def main():
     print("Initializing Active Tremor Cancellation System...")
@@ -22,6 +23,7 @@ def main():
     # Initialize Processors
     emg_proc = EMGProcessor(fs=20, rms_window=5)
     imu_proc = IMUProcessor(alpha_smooth=0.3)
+    logger = DataLogger(data_dir=os.path.join(os.path.dirname(__file__), "data"))
 
     # Start the Visualization Process
     viz_process = multiprocessing.Process(target=run_dashboard, args=(viz_queue, command_queue))
@@ -30,6 +32,7 @@ def main():
 
     acquisition_thread = None
     system_status = "DISCONNECTED"
+    manual_tremor_present = False
     
     print("Main Loop Started. Awaiting UI Commands...")
 
@@ -70,6 +73,20 @@ def main():
                     # Push status update immediately
                     if not viz_queue.full():
                         viz_queue.put({'status': system_status})
+                        
+                elif cmd.get('action') == 'START_LOG':
+                    user = cmd.get('user', 'unknown')
+                    action_name = cmd.get('action_name', 'unknown')
+                    duration = cmd.get('duration', 30)
+                    save_dir = cmd.get('save_dir', None)
+                    logger.start_recording(user, action_name, duration, custom_dir=save_dir)
+                    
+                elif cmd.get('action') == 'SET_TREMOR':
+                    manual_tremor_present = cmd.get('state', False)
+
+            # Check if logger duration has elapsed
+            if logger.is_recording and logger.get_remaining_time() <= 0:
+                logger.stop_recording()
 
             # 2. Process incoming data if connected
             if system_status == "LIVE" and acquisition_thread and not acquisition_thread.running:
@@ -85,19 +102,28 @@ def main():
                 emg_filtered, emg_rms = emg_proc.process(data['emg'])
                 accel_smooth, gyro_smooth, roll, pitch = imu_proc.process(data['accel'], data['gyro'])
                 
-                # Placeholder for ML and Control Output
-                tremor_detected = emg_rms > 2500
-                fes_active = tremor_detected
+                # Push to logger
+                if logger.is_recording:
+                    logger.log_data({
+                        'emg': data['emg'],
+                        'emg_filtered': emg_filtered,
+                        'emg_rms': emg_rms,
+                        'accel': data['accel'],
+                        'accel_smooth': accel_smooth,
+                        'gyro': data['gyro'],
+                        'gyro_smooth': gyro_smooth,
+                        'tremor_detected': manual_tremor_present
+                    })
                 
                 # Push to visualizer
                 viz_data = {
                     'status': system_status,
-                    'tremor': tremor_detected,
-                    'fes': fes_active,
                     'emg_filtered': emg_filtered,
                     'emg_rms': emg_rms,
                     'accel_smooth': accel_smooth,
-                    'gyro_smooth': gyro_smooth
+                    'gyro_smooth': gyro_smooth,
+                    'log_status': 'RECORDING' if logger.is_recording else 'STOPPED',
+                    'log_remaining': logger.get_remaining_time()
                 }
                 
                 if not viz_queue.full():

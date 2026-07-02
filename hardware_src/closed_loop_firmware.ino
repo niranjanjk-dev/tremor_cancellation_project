@@ -13,7 +13,7 @@ bool magEnabled = false;
 // Highly Optimized Binary Structure
 // __attribute__((packed)) ensures the compiler doesn't add empty padding bytes
 struct __attribute__((packed)) SensorData {
-  uint8_t sync1 = 0xAA; // Hi hello
+  uint8_t sync1 = 0xAA; // Sync byte 1
   uint8_t sync2 = 0xBB; // Sync byte 2
   uint32_t timestamp;   // 4 bytes
   uint16_t emgRaw;      // 2 bytes

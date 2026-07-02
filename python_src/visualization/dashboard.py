@@ -1,6 +1,7 @@
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtWidgets, QtGui
 import sys
+import os
 import time
 from collections import deque
 import serial.tools.list_ports
@@ -31,12 +32,6 @@ def run_dashboard(viz_queue, command_queue):
     
     lbl_fps = QtWidgets.QLabel("UI FPS: 0.0")
     lbl_fps.setStyleSheet("font-size: 16px; font-weight: bold; color: #00FF00;")
-    
-    lbl_ml = QtWidgets.QLabel("TREMOR: NONE")
-    lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
-    
-    lbl_fes = QtWidgets.QLabel("FES STIMULATION: OFF")
-    lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
     
     # Port Selection
     lbl_port = QtWidgets.QLabel("Port:")
@@ -98,13 +93,121 @@ def run_dashboard(viz_queue, command_queue):
     status_layout.addSpacing(20)
     status_layout.addWidget(btn_pause)
     status_layout.addStretch()
-    status_layout.addWidget(lbl_ml)
-    status_layout.addSpacing(20)
-    status_layout.addWidget(lbl_fes)
-    status_layout.addStretch()
     status_layout.addWidget(lbl_fps)
     
     main_layout.addLayout(status_layout)
+    
+    # --- Data Logging Bar ---
+    logging_layout = QtWidgets.QHBoxLayout()
+    
+    lbl_log_title = QtWidgets.QLabel("DATA LOGGING:")
+    lbl_log_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #FFFFFF;")
+    
+    lbl_user = QtWidgets.QLabel("User:")
+    lbl_user.setStyleSheet("font-size: 14px; color: #d3d3d3;")
+    input_user = QtWidgets.QComboBox()
+    input_user.setEditable(True)
+    input_user.setStyleSheet("background-color: #333333; color: white; padding: 4px; font-size: 14px; border: 1px solid #555;")
+    input_user.setFixedWidth(120)
+    
+    # scan for existing users
+    default_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    existing_users = set()
+    if os.path.exists(default_dir):
+        for f in os.listdir(default_dir):
+            if f.startswith("log_") and f.endswith(".csv"):
+                parts = f.split("_")
+                if len(parts) >= 2:
+                    existing_users.add(parts[1])
+    input_user.addItems(list(existing_users))
+    if not existing_users:
+        input_user.setEditText("Guest")
+    
+    lbl_action = QtWidgets.QLabel("Action:")
+    lbl_action.setStyleSheet("font-size: 14px; color: #d3d3d3;")
+    combo_action = QtWidgets.QComboBox()
+    combo_action.addItems([
+        "Rest", "Picking and placing", "Spiral Moving", "Reaching a object",
+        "Postural Hold", "Kinetic Movement", "Pointing", "Pouring Water"
+    ])
+    combo_action.setEditable(True)
+    combo_action.setStyleSheet("background-color: #333333; color: white; padding: 4px; font-size: 14px; border: 1px solid #555;")
+    
+    lbl_duration = QtWidgets.QLabel("Duration (s):")
+    lbl_duration.setStyleSheet("font-size: 14px; color: #d3d3d3;")
+    spin_duration = QtWidgets.QSpinBox()
+    spin_duration.setRange(1, 3600)
+    spin_duration.setValue(30)
+    spin_duration.setStyleSheet("background-color: #333333; color: white; padding: 4px; font-size: 14px; border: 1px solid #555;")
+    
+    btn_record = QtWidgets.QPushButton("Start Recording")
+    btn_record.setStyleSheet("background-color: #883333; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+    
+    lbl_dir = QtWidgets.QLabel("Save Dir:")
+    lbl_dir.setStyleSheet("font-size: 14px; color: #d3d3d3;")
+    input_dir = QtWidgets.QLineEdit()
+    input_dir.setText(default_dir)
+    input_dir.setStyleSheet("background-color: #333333; color: white; padding: 4px; font-size: 14px; border: 1px solid #555;")
+    input_dir.setFixedWidth(150)
+    
+    btn_browse = QtWidgets.QPushButton("...")
+    btn_browse.setStyleSheet("background-color: #555555; color: white; padding: 4px; font-weight: bold;")
+    def on_browse():
+        directory = QtWidgets.QFileDialog.getExistingDirectory(win, "Select Save Directory", input_dir.text())
+        if directory:
+            input_dir.setText(directory)
+    btn_browse.clicked.connect(on_browse)
+    
+    lbl_rec_status = QtWidgets.QLabel("Ready")
+    lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #AAAAAA;")
+    
+    chk_tremor = QtWidgets.QCheckBox("Tremor Present")
+    chk_tremor.setStyleSheet("color: white; font-size: 14px; font-weight: bold; border: 2px solid #666; border-radius: 4px; padding: 4px; background-color: #222;")
+    def on_tremor_toggled(state):
+        command_queue.put({'action': 'SET_TREMOR', 'state': bool(state)})
+    chk_tremor.stateChanged.connect(on_tremor_toggled)
+    
+    def on_record():
+        user = input_user.currentText()
+        action = combo_action.currentText()
+        duration = spin_duration.value()
+        save_dir = input_dir.text()
+        
+        command_queue.put({
+            'action': 'START_LOG',
+            'user': user,
+            'action_name': action,
+            'duration': duration,
+            'save_dir': save_dir
+        })
+        lbl_rec_status.setText(f"Requesting log for {duration}s...")
+        lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #FFFF00;")
+
+    btn_record.clicked.connect(on_record)
+    
+    logging_layout.addWidget(lbl_log_title)
+    logging_layout.addSpacing(10)
+    logging_layout.addWidget(lbl_user)
+    logging_layout.addWidget(input_user)
+    logging_layout.addSpacing(10)
+    logging_layout.addWidget(lbl_action)
+    logging_layout.addWidget(combo_action)
+    logging_layout.addSpacing(10)
+    logging_layout.addWidget(lbl_duration)
+    logging_layout.addWidget(spin_duration)
+    logging_layout.addSpacing(10)
+    logging_layout.addWidget(btn_record)
+    logging_layout.addSpacing(10)
+    logging_layout.addWidget(lbl_dir)
+    logging_layout.addWidget(input_dir)
+    logging_layout.addWidget(btn_browse)
+    logging_layout.addSpacing(20)
+    logging_layout.addWidget(chk_tremor)
+    logging_layout.addSpacing(20)
+    logging_layout.addWidget(lbl_rec_status)
+    logging_layout.addStretch()
+    
+    main_layout.addLayout(logging_layout)
     
     # --- Graphics Layout for Plots ---
     plot_layout = pg.GraphicsLayoutWidget()
@@ -152,8 +255,8 @@ def run_dashboard(viz_queue, command_queue):
         
         has_new_data = False
         sys_status = None
-        tremor_detected = False
-        fes_active = False
+        log_status = None
+        log_remaining = 0
         
         # Consume all available items in the queue
         while not viz_queue.empty():
@@ -162,21 +265,25 @@ def run_dashboard(viz_queue, command_queue):
                 has_new_data = True
                 
                 sys_status = data.get('status')
-                tremor_detected = data.get('tremor', False)
-                fes_active = data.get('fes', False)
                 
-                data_emg.append(data['emg_filtered'])
-                data_rms.append(data['emg_rms'])
+                if 'log_status' in data:
+                    log_status = data['log_status']
+                    log_remaining = data.get('log_remaining', 0)
                 
-                ax, ay, az = data['accel_smooth']
-                data_ax.append(ax)
-                data_ay.append(ay)
-                data_az.append(az)
-                
-                gx, gy, gz = data['gyro_smooth']
-                data_gx.append(gx)
-                data_gy.append(gy)
-                data_gz.append(gz)
+                # Check if data contains actual graph updates
+                if 'emg_filtered' in data:
+                    data_emg.append(data['emg_filtered'])
+                    data_rms.append(data['emg_rms'])
+                    
+                    ax, ay, az = data['accel_smooth']
+                    data_ax.append(ax)
+                    data_ay.append(ay)
+                    data_az.append(az)
+                    
+                    gx, gy, gz = data['gyro_smooth']
+                    data_gx.append(gx)
+                    data_gy.append(gy)
+                    data_gz.append(gz)
                 
             except Exception:
                 break
@@ -194,19 +301,13 @@ def run_dashboard(viz_queue, command_queue):
                     lbl_status.setText("SYSTEM: DISCONNECTED")
                     lbl_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFA500;")
                 
-            if tremor_detected:
-                lbl_ml.setText("TREMOR: DETECTED")
-                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF; background-color: #FF0000; padding: 6px; border-radius: 4px;")
-            else:
-                lbl_ml.setText("TREMOR: NONE")
-                lbl_ml.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
-                
-            if fes_active:
-                lbl_fes.setText("FES STIMULATION: FIRING")
-                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #000000; background-color: #00FFFF; padding: 6px; border-radius: 4px;")
-            else:
-                lbl_fes.setText("FES STIMULATION: OFF")
-                lbl_fes.setStyleSheet("font-size: 16px; font-weight: bold; color: #d3d3d3; background-color: #333333; padding: 6px; border-radius: 4px;")
+            if log_status:
+                if log_status == "RECORDING":
+                    lbl_rec_status.setText(f"Recording... {int(log_remaining)}s left")
+                    lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #FF0000;")
+                elif log_status == "STOPPED":
+                    lbl_rec_status.setText("Ready")
+                    lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #AAAAAA;")
 
             if not is_paused:
                 # Update plot curves
