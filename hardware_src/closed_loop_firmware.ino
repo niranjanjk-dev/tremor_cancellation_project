@@ -23,7 +23,7 @@ struct __attribute__((packed)) SensorData {
   int16_t gyroX;        // 2 bytes
   int16_t gyroY;        // 2 bytes
   int16_t gyroZ;        // 2 bytes
-  int16_t magX;         // 2 bytes
+  int16_t magX;         // hhhhh
   int16_t magY;         // 2 bytes
   int16_t magZ;         // 2 bytes
 };
