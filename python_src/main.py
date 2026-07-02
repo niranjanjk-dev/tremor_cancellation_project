@@ -3,7 +3,7 @@ import sys
 import os
 
 # Set Qt environment variables globally to prevent binding mismatches on Windows
-os.environ["QT_API"] = "pyqt5"
+os.environ["PYQTGRAPH_QT_LIB"] = "PyQt5"
 os.environ["QT_SCALE_FACTOR"] = "1"
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
