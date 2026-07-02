@@ -1,6 +1,12 @@
 import time
 import sys
 import os
+
+# Set Qt environment variables globally to prevent binding mismatches on Windows
+os.environ["QT_API"] = "pyqt5"
+os.environ["QT_SCALE_FACTOR"] = "1"
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+
 import multiprocessing
 
 # Add the root directory to path to allow imports if running directly

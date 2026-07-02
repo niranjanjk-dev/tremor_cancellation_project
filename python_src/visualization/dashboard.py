@@ -1,7 +1,14 @@
-import pyqtgraph as pg
-from PyQt5 import QtCore, QtWidgets, QtGui
 import sys
 import os
+
+# Ensure pyqtgraph uses PyQt5 consistently across all OS (fixes Windows TypeError)
+os.environ["QT_API"] = "pyqt5"
+# Silence Windows DPI awareness warnings
+os.environ["QT_SCALE_FACTOR"] = "1"
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+
+import pyqtgraph as pg
+from PyQt5 import QtCore, QtWidgets, QtGui
 import time
 from collections import deque
 import serial.tools.list_ports
