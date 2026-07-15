@@ -39,6 +39,15 @@ def main():
     acquisition_thread = None
     system_status = "DISCONNECTED"
     manual_tremor_present = False
+    manual_pre_tremor_present = False
+    
+    # Auto-Recording State
+    auto_record_active = False
+    auto_record_state = "IDLE"
+    auto_record_timer = 0
+    auto_interval = 0
+    auto_user = "unknown"
+    auto_save_dir = None
     
     print("Main Loop Started. Awaiting UI Commands...")
 
@@ -89,10 +98,74 @@ def main():
                     
                 elif cmd.get('action') == 'SET_TREMOR':
                     manual_tremor_present = cmd.get('state', False)
+                    
+                elif cmd.get('action') == 'SET_PRE_TREMOR':
+                    manual_pre_tremor_present = cmd.get('state', False)
 
-            # Check if logger duration has elapsed
-            if logger.is_recording and logger.get_remaining_time() <= 0:
+                elif cmd.get('action') == 'START_AUTO_LOG':
+                    auto_user = cmd.get('user', 'unknown')
+                    auto_save_dir = cmd.get('save_dir', None)
+                    auto_interval = cmd.get('duration', 10)
+                    
+                    auto_record_active = True
+                    auto_record_state = "NON_TREMOR"
+                    auto_record_timer = time.time()
+                    
+                    if logger.is_recording:
+                        logger.stop_recording()
+                        
+                    logger.start_recording(auto_user, "Auto: Non Tremor", auto_interval, custom_dir=auto_save_dir)
+                    print("Auto-Recording Loop Started.")
+                    
+                elif cmd.get('action') == 'STOP_AUTO_LOG':
+                    auto_record_active = False
+                    auto_record_state = "IDLE"
+                    if logger.is_recording:
+                        logger.stop_recording()
+                    print("Auto-Recording Loop Stopped.")
+
+            # Check if logger duration has elapsed (for manual recording only)
+            if not auto_record_active and logger.is_recording and logger.get_remaining_time() <= 0:
                 logger.stop_recording()
+
+            # Auto-Recording State Machine Transitions
+            if auto_record_active:
+                current_time = time.time()
+                elapsed = current_time - auto_record_timer
+                break_duration = 3.0
+                
+                if auto_record_state == "NON_TREMOR":
+                    if elapsed >= auto_interval:
+                        logger.stop_recording()
+                        auto_record_state = "BREAK_1"
+                        auto_record_timer = current_time
+                        
+                elif auto_record_state == "BREAK_1":
+                    if elapsed >= break_duration:
+                        auto_record_state = "PRE_TREMOR"
+                        auto_record_timer = current_time
+                        logger.start_recording(auto_user, "Auto: Pre Tremor", auto_interval, custom_dir=auto_save_dir)
+                        
+                elif auto_record_state == "PRE_TREMOR":
+                    if elapsed >= auto_interval:
+                        logger.stop_recording()
+                        auto_record_state = "BREAK_2"
+                        auto_record_timer = current_time
+                        
+                elif auto_record_state == "BREAK_2":
+                    if elapsed >= break_duration:
+                        auto_record_state = "TREMOR"
+                        auto_record_timer = current_time
+                        logger.start_recording(auto_user, "Auto: Tremor", auto_interval, custom_dir=auto_save_dir)
+                        
+                elif auto_record_state == "TREMOR":
+                    if elapsed >= auto_interval:
+                        logger.stop_recording()
+                        auto_record_state = "IDLE"
+                        auto_record_active = False
+                        print("Auto-Recording Sequence Complete. Saved 3 files.")
+
+
 
             # 2. Process incoming data if connected
             if system_status == "LIVE" and acquisition_thread and not acquisition_thread.running:
@@ -108,6 +181,20 @@ def main():
                 emg_filtered, emg_rms = emg_proc.process(data['emg'])
                 accel_smooth, gyro_smooth, roll, pitch = imu_proc.process(data['accel'], data['gyro'])
                 
+                # Force tremor and pre_tremor flags if auto recording
+                is_tremor = manual_tremor_present
+                is_pre_tremor = manual_pre_tremor_present
+                if auto_record_active:
+                    if auto_record_state == "TREMOR":
+                        is_tremor = True
+                        is_pre_tremor = False
+                    elif auto_record_state == "PRE_TREMOR":
+                        is_tremor = False
+                        is_pre_tremor = True
+                    else:
+                        is_tremor = False
+                        is_pre_tremor = False
+
                 # Push to logger
                 if logger.is_recording:
                     logger.log_data({
@@ -118,9 +205,22 @@ def main():
                         'accel_smooth': accel_smooth,
                         'gyro': data['gyro'],
                         'gyro_smooth': gyro_smooth,
-                        'tremor_detected': manual_tremor_present
+                        'tremor_detected': is_tremor,
+                        'pre_tremor_detected': is_pre_tremor
                     })
                 
+                auto_remaining = 0
+                if auto_record_active:
+                    elapsed = time.time() - auto_record_timer
+                    if auto_record_state.startswith("BREAK"):
+                        auto_remaining = max(0, 3.0 - elapsed)
+                    elif auto_record_state == "NON_TREMOR":
+                        auto_remaining = max(0, auto_interval - elapsed)
+                    elif auto_record_state == "PRE_TREMOR":
+                        auto_remaining = max(0, auto_interval - elapsed)
+                    elif auto_record_state == "TREMOR":
+                        auto_remaining = max(0, auto_interval - elapsed)
+
                 # Push to visualizer
                 viz_data = {
                     'status': system_status,
@@ -129,7 +229,10 @@ def main():
                     'accel_smooth': accel_smooth,
                     'gyro_smooth': gyro_smooth,
                     'log_status': 'RECORDING' if logger.is_recording else 'STOPPED',
-                    'log_remaining': logger.get_remaining_time()
+                    'log_remaining': logger.get_remaining_time(),
+                    'auto_active': auto_record_active,
+                    'auto_state': auto_record_state,
+                    'auto_remaining': auto_remaining
                 }
                 
                 if not viz_queue.full():

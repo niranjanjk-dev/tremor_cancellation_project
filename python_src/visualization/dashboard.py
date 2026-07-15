@@ -170,11 +170,35 @@ def run_dashboard(viz_queue, command_queue):
     
     chk_tremor = QtWidgets.QCheckBox("Tremor Present")
     chk_tremor.setStyleSheet("color: white; font-size: 14px; font-weight: bold; border: 2px solid #666; border-radius: 4px; padding: 4px; background-color: #222;")
+    
+    chk_pre_tremor = QtWidgets.QCheckBox("Pre Tremor Present")
+    chk_pre_tremor.setStyleSheet("color: white; font-size: 14px; font-weight: bold; border: 2px solid #666; border-radius: 4px; padding: 4px; background-color: #222;")
+    
     def on_tremor_toggled(state):
+        if state:
+            chk_pre_tremor.blockSignals(True)
+            chk_pre_tremor.setChecked(False)
+            chk_pre_tremor.blockSignals(False)
+            command_queue.put({'action': 'SET_PRE_TREMOR', 'state': False})
         command_queue.put({'action': 'SET_TREMOR', 'state': bool(state)})
+        
+    def on_pre_tremor_toggled(state):
+        if state:
+            chk_tremor.blockSignals(True)
+            chk_tremor.setChecked(False)
+            chk_tremor.blockSignals(False)
+            command_queue.put({'action': 'SET_TREMOR', 'state': False})
+        command_queue.put({'action': 'SET_PRE_TREMOR', 'state': bool(state)})
+
     chk_tremor.stateChanged.connect(on_tremor_toggled)
+    chk_pre_tremor.stateChanged.connect(on_pre_tremor_toggled)
     
     def on_record():
+        if "CONNECTED (LIVE)" not in lbl_status.text():
+            lbl_rec_status.setText("No Data Found! Connect First.")
+            lbl_rec_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #FF5555;")
+            return
+            
         user = input_user.currentText()
         action = combo_action.currentText()
         duration = spin_duration.value()
@@ -209,12 +233,69 @@ def run_dashboard(viz_queue, command_queue):
     logging_layout.addWidget(input_dir)
     logging_layout.addWidget(btn_browse)
     logging_layout.addSpacing(20)
-    logging_layout.addWidget(chk_tremor)
+    
+    chk_layout = QtWidgets.QHBoxLayout()
+    chk_layout.addWidget(chk_pre_tremor)
+    chk_layout.addWidget(chk_tremor)
+    logging_layout.addLayout(chk_layout)
+    
     logging_layout.addSpacing(20)
     logging_layout.addWidget(lbl_rec_status)
     logging_layout.addStretch()
     
     main_layout.addLayout(logging_layout)
+    
+    # --- Auto-Recording Bar ---
+    auto_layout = QtWidgets.QHBoxLayout()
+    
+    lbl_auto_title = QtWidgets.QLabel("AUTO CLASSIFICATION LOOP (Uses main 'Duration' above):")
+    lbl_auto_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #FFFFFF;")
+    
+    btn_auto = QtWidgets.QPushButton("Start Auto-Loop")
+    btn_auto.setStyleSheet("background-color: #883333; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+    
+    lbl_auto_status = QtWidgets.QLabel("Auto: OFF")
+    lbl_auto_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #AAAAAA;")
+    
+    is_auto_running = False
+    
+    def on_auto_toggle():
+        nonlocal is_auto_running
+        if not is_auto_running:
+            if "CONNECTED (LIVE)" not in lbl_status.text():
+                lbl_auto_status.setText("No Data Found! Connect First.")
+                lbl_auto_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #FF5555;")
+                return
+                
+            is_auto_running = True
+            btn_auto.setText("Stop Auto-Loop")
+            btn_auto.setStyleSheet("background-color: #335588; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+            
+            user = input_user.currentText()
+            save_dir = input_dir.text()
+            main_duration = spin_duration.value()
+            command_queue.put({
+                'action': 'START_AUTO_LOG',
+                'user': user,
+                'save_dir': save_dir,
+                'duration': main_duration
+            })
+        else:
+            is_auto_running = False
+            btn_auto.setText("Start Auto-Loop")
+            btn_auto.setStyleSheet("background-color: #883333; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+            command_queue.put({'action': 'STOP_AUTO_LOG'})
+            
+    btn_auto.clicked.connect(on_auto_toggle)
+    
+    auto_layout.addWidget(lbl_auto_title)
+    auto_layout.addSpacing(20)
+    auto_layout.addWidget(btn_auto)
+    auto_layout.addSpacing(20)
+    auto_layout.addWidget(lbl_auto_status)
+    auto_layout.addStretch()
+    
+    main_layout.addLayout(auto_layout)
     
     # --- Graphics Layout for Plots ---
     plot_layout = pg.GraphicsLayoutWidget()
@@ -264,6 +345,9 @@ def run_dashboard(viz_queue, command_queue):
         sys_status = None
         log_status = None
         log_remaining = 0
+        auto_active = None
+        auto_state = None
+        auto_remaining = 0
         
         # Consume all available items in the queue
         while not viz_queue.empty():
@@ -276,6 +360,11 @@ def run_dashboard(viz_queue, command_queue):
                 if 'log_status' in data:
                     log_status = data['log_status']
                     log_remaining = data.get('log_remaining', 0)
+                    
+                if 'auto_active' in data:
+                    auto_active = data['auto_active']
+                    auto_state = data['auto_state']
+                    auto_remaining = data['auto_remaining']
                 
                 # Check if data contains actual graph updates
                 if 'emg_filtered' in data:
@@ -310,11 +399,25 @@ def run_dashboard(viz_queue, command_queue):
                 
             if log_status:
                 if log_status == "RECORDING":
-                    lbl_rec_status.setText(f"Recording... {int(log_remaining)}s left")
-                    lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #FF0000;")
+                    m, s = divmod(int(log_remaining), 60)
+                    lbl_rec_status.setText(f"Recording... ⏱️ {m:02d}:{s:02d}")
+                    lbl_rec_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #FF0000;")
                 elif log_status == "STOPPED":
                     lbl_rec_status.setText("Ready")
                     lbl_rec_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #AAAAAA;")
+
+            if auto_active is not None:
+                if auto_active:
+                    state_str = auto_state.replace('_', ' ')
+                    m, s = divmod(int(auto_remaining), 60)
+                    lbl_auto_status.setText(f"[{state_str}] - ⏱️ {m:02d}:{s:02d}")
+                    if "BREAK" in auto_state:
+                        lbl_auto_status.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFA500;") # Orange for break
+                    else:
+                        lbl_auto_status.setStyleSheet("font-size: 18px; font-weight: bold; color: #00FF00;") # Green for recording
+                else:
+                    lbl_auto_status.setText("Auto: OFF")
+                    lbl_auto_status.setStyleSheet("font-size: 16px; font-weight: bold; color: #AAAAAA;")
 
             if not is_paused:
                 # Update plot curves

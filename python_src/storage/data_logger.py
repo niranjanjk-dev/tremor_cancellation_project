@@ -27,7 +27,7 @@ class DataLogger:
             "accel_x_smooth", "accel_y_smooth", "accel_z_smooth",
             "gyro_x_raw", "gyro_y_raw", "gyro_z_raw",
             "gyro_x_smooth", "gyro_y_smooth", "gyro_z_smooth",
-            "tremor_detected"
+            "tremor_detected", "pre_tremor_detected"
         ]
 
     def start_recording(self, user_name, action_name, duration_seconds, custom_dir=None):
@@ -80,6 +80,7 @@ class DataLogger:
         gx_s, gy_s, gz_s = data_dict.get('gyro_smooth', (0,0,0))
         
         tremor = data_dict.get('tremor_detected', False)
+        pre_tremor = data_dict.get('pre_tremor_detected', False)
         
         row = [
             timestamp, self.user_name, self.action_name,
@@ -88,7 +89,7 @@ class DataLogger:
             ax_s, ay_s, az_s,
             gx_r, gy_r, gz_r,
             gx_s, gy_s, gz_s,
-            int(tremor)
+            int(tremor), int(pre_tremor)
         ]
         
         try:
